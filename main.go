@@ -70,7 +70,7 @@ func run(ctx context.Context, imageName, testNamePrefix string) error {
 }
 
 func runOneTest(ctx context.Context, wd, imageName, testName string) error {
-	cmdRun, err := startDocker(ctx, "run", "--rm", "--init", "--name", testName, "-v", filepath.Join(wd, "docker_host_volume")+":/datavolume", imageName, "sh", "-c", "for i in {1..14400}; do echo $i; ls \"/datavolume/${name}\"; sleep 1; done")
+	cmdRun, err := startDocker(ctx, "run", "--rm", "--init", "--name", testName, "-v", filepath.Join(wd, "docker_host_volume")+":/datavolume", "-w", filepath.Join("/datavolume", testName), imageName, "sh", "-c", "for i in {1..14400}; do echo $i; cat * | md5sum; sleep .5; done")
 	if err != nil {
 		return fmt.Errorf("unable to docker run: %v", err)
 	}
@@ -87,12 +87,14 @@ func runOneTest(ctx context.Context, wd, imageName, testName string) error {
 		return fmt.Errorf("unable to docker logs: %v", err)
 	}
 
-	cmdExec, err := startDocker(ctx, "exec", testName, "fio", "--name", testName, "--directory", filepath.Join("datavolume", testName), "--numjobs=3", "--size=8388608", "--time_based", "--runtime=14400s", "--ramp_time=2s", "--ioengine=libaio", "--direct=1", "--verify=0", "--bs=4096", "--iodepth=256", "--rw=read", "--group_reporting=1", "--kb_base=1024", "--unit_base=8")
-	if err != nil {
-		return fmt.Errorf("unable to docker exec: %v", err)
-	}
+	if true {
+		cmdExec, err := startDocker(ctx, "exec", testName, "fio", "--name", testName, "--directory", ".", "--numjobs=3", "--size=8388608", "--time_based", "--runtime=14400s", "--ramp_time=2s", "--ioengine=libaio", "--direct=1", "--verify=0", "--bs=4096", "--iodepth=256", "--rw=read", "--group_reporting=1", "--kb_base=1024", "--unit_base=8")
+		if err != nil {
+			return fmt.Errorf("unable to docker exec: %v", err)
+		}
 
-	cmdExec.Wait()
+		cmdExec.Wait()
+	}
 	cmdRun.Wait()
 
 	return nil
