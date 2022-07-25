@@ -1,4 +1,4 @@
-FROM golang as build
+FROM golang:1.18.4-alpine3.16 as build
 WORKDIR /app
 COPY main.go go.mod go.sum vendor ./
 ARG GOOS=darwin
