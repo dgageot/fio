@@ -19,9 +19,20 @@ const (
 )
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	catchCtrlC(cancel)
+
+	if err := run(ctx, imageName, testName); err != nil {
+		panic(err)
+	}
+}
+
+func run(ctx context.Context, imageName, testNamePrefix string) error {
 	count := 1
 	if len(os.Args) > 1 {
-		count, err := strconv.Atoi(os.Args[1])
+		var err error
+		count, err = strconv.Atoi(os.Args[1])
 		if err != nil {
 			panic(err)
 		}
@@ -29,25 +40,6 @@ func main() {
 		fmt.Printf("Running %d tests in concurrently\n", count)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	catchCtrlC(cancel)
-
-	var errs errgroup.Group
-	for i := 0; i < count; i++ {
-		testName := fmt.Sprintf("%s-%d", testName, i)
-
-		errs.Go(func() error {
-			return run(ctx, imageName, testName)
-		})
-	}
-
-	if err := errs.Wait(); err != nil {
-		panic(err)
-	}
-}
-
-func run(ctx context.Context, imageName, testName string) error {
 	if err := buildImage(ctx, imageName); err != nil {
 		return fmt.Errorf("unable to build the docker image: %v", err)
 	}
@@ -57,16 +49,27 @@ func run(ctx context.Context, imageName, testName string) error {
 		return fmt.Errorf("unable to get working dir: %v", err)
 	}
 
-	runOneTest(ctx, wd, imageName, testName)
-	remove(testName)
+	var errs errgroup.Group
+	for i := 0; i < count; i++ {
+		testName := fmt.Sprintf("%s-%0.2d", testNamePrefix, i)
+		if err := createFolder(testName); err != nil {
+			return fmt.Errorf("unable to create main folder: %v", err)
+		}
+
+		errs.Go(func() error {
+			err := runOneTest(ctx, wd, imageName, testName)
+			remove(testName)
+			return err
+		})
+	}
+
+	if err := errs.Wait(); err != nil {
+		panic(err)
+	}
 	return err
 }
 
 func runOneTest(ctx context.Context, wd, imageName, testName string) error {
-	if err := createFolder(testName); err != nil {
-		return fmt.Errorf("unable to create main folder: %v", err)
-	}
-
 	cmdRun, err := startDocker(ctx, "run", "--rm", "--init", "--name", testName, "-v", filepath.Join(wd, "docker_host_volume")+":/datavolume", imageName, "sh", "-c", "for i in {1..14400}; do echo $i; ls \"/datavolume/${name}\"; sleep 1; done")
 	if err != nil {
 		return fmt.Errorf("unable to docker run: %v", err)
